@@ -119,13 +119,19 @@ function execute_command(client::RedisClient, args...; options...)
 end
 
 function parse_response(client::RedisClient, conn::Connection,
-                        command_name::ASCIIString; options...)
+                        command_name::ASCIIString; stream::Bool = false, kwargs...)
     # Parses a response from the Redis server
-    response = read_response(conn)
-    if in(command_name, keys(client.response_callbacks))
-        return client.response_callbacks[command_name](response, options...)
+    if stream
+        read_response(conn; stream=true, kwargs...)
+    else
+        response = read_response(conn)
+
+        if in(command_name, keys(client.response_callbacks))
+            return client.response_callbacks[command_name](response, options...)
+        end
+
+        response
     end
-    response
 end
 
 function _flatten_dict(values::Dict)
@@ -250,9 +256,9 @@ function exists(client::RedisClient, name::String)
     execute_command(client, "EXISTS", name)
 end
 
-function get(client::RedisClient, name::String)
+function get(client::RedisClient, name::String; options...)
     # Return the value at key ``name``, or ``nothing`` if the key doesn't exist
-    execute_command(client, "GET", name)
+    execute_command(client, "GET", name; options...)
 end
 
 function set(client::RedisClient, name::String, value;
@@ -342,7 +348,7 @@ end
 
 function sadd(client::RedisClient, name::String, member...)
     # SADD key member [member ...]
-    # Add one or more members to a set 
+    # Add one or more members to a set
     execute_command(client, "SADD", name, member...)
 end
 
@@ -355,77 +361,77 @@ end
 
 function scard(client::RedisClient, name::String)
     # SCARD key
-    # Get the number of members in a set 
+    # Get the number of members in a set
     execute_command(client, "SCARD", name)
 end
 
 function spop(client::RedisClient, name::String)
     # SPOP key
-    # Remove and return a random member from a set 
+    # Remove and return a random member from a set
     execute_command(client, "SPOP", name)
 end
 
 function sdiff(client::RedisClient, name::String, key...)
-    # SDIFF key [key ...] 
-    # Subtract multiple sets 
+    # SDIFF key [key ...]
+    # Subtract multiple sets
     execute_command(client, "SDIFF", name, key...)
 end
 
 function srandmember(client::RedisClient, name::String, count::Int64)
     # SRANDMEMBER key [count]
-    # Get one or multiple random members from a set 
+    # Get one or multiple random members from a set
     execute_command(client, "SRANDMEMBER", name, count)
 end
 
 function sdiffstore(client::RedisClient, name::String,
                     destination::String, key...)
     # SDIFFSTORE destination key [key ...]
-    # Subtract multiple sets and store the resulting set in a key 
+    # Subtract multiple sets and store the resulting set in a key
     execute_command(client, "SDIFFSTORE", name, destination, key...)
 end
 
 function srem(client::RedisClient, name::String, member...)
     # SREM key member [member ...]
-    # Remove one or more members from a set 
+    # Remove one or more members from a set
     execute_command(client, "SREM", name, member...)
 end
 
 function sinter(client::RedisClient, name::String, key...)
     # SINTER key [key ...]
-    # Intersect multiple sets 
+    # Intersect multiple sets
     execute_command(client, "SINTER", name, key...)
 end
 
 function sunion(client::RedisClient, name::String, key...)
     # SUNION key [key ...]
-    # Add multiple sets 
+    # Add multiple sets
     execute_command(client, "SUNION", name, key...)
 end
 
 function sinterstore(client::RedisClient, name::String,
                      destination::String, key...)
     # SINTERSTORE destination key [key ...]
-    # Intersect multiple sets and store the resulting set in a key 
+    # Intersect multiple sets and store the resulting set in a key
     execute_command(client, "SINTERSTORE", name, key...)
 end
 
 function sunionstore(client::RedisClient,
                      destination::String, key...)
     # SUNIONSTORE destination key [key ...]
-    # Add multiple sets and store the resulting set in a key 
+    # Add multiple sets and store the resulting set in a key
     execute_command(client, "SUNIONSTORE", destination, key...)
 end
 
 function sismember(client::RedisClient, name::String, member)
     # SISMEMBER key member
-    # Determine if a given value is a member of a set 
+    # Determine if a given value is a member of a set
     execute_command(client, "SISMEMBER", name, member)
 end
 
 function sscan(client::RedisClient, name::String, cursor;
                match=nothing, count=nothing)
     # SSCAN key cursor [MATCH pattern] [COUNT count]
-    # Incrementally iterate Set elements 
+    # Incrementally iterate Set elements
     args = [name, cursor]
     if match != nothing
         push!(args, "MATCH")
@@ -440,7 +446,7 @@ end
 
 function smembers(client::RedisClient, name::String)
     # SMEMBERS key
-    # Get all the members in a set 
+    # Get all the members in a set
     execute_command(client, "SMEMBERS", name)
 end
 
@@ -448,25 +454,25 @@ end
 
 function hdel(client::RedisClient, name::String, field...)
      # HDEL key field [field ...]
-     # Delete one or more hash fields 
+     # Delete one or more hash fields
      execute_command(client, "HDEL", name, field...)
 end
 
 function hexists(client::RedisClient, name::String, field)
-    # HEXISTS key field 
-    # Determine if a hash field exists 
+    # HEXISTS key field
+    # Determine if a hash field exists
     execute_command(client, "HEXISTS", name, field)
 end
 
-function hget(client::RedisClient, name::String, field)
-    # HGET key field 
-    # Get the value of a hash field 
-    execute_command(client, "HGET", name, field)
+function hget(client::RedisClient, name::String, field; options...)
+    # HGET key field
+    # Get the value of a hash field
+    execute_command(client, "HGET", name, field; options...)
 end
 
 function hgetall(client::RedisClient, name::String; to_dict::Bool=true)
-    # HGETALL key 
-    # Get all the fields and values in a hash 
+    # HGETALL key
+    # Get all the fields and values in a hash
     result = execute_command(client, "HGETALL", name)
     if to_dict
         return [result[i] => result[i + 1] for i = 1:2:length(result)]
@@ -476,64 +482,64 @@ function hgetall(client::RedisClient, name::String; to_dict::Bool=true)
 end
 
 function hincrby(client::RedisClient, name::String, field, increment::Int64)
-    # HINCRBY key field increment 
-    # Increment the integer value of a hash field by the given number 
+    # HINCRBY key field increment
+    # Increment the integer value of a hash field by the given number
     execute_command(client, "HINCRBY", name, field, increment)
 end
 
 function hincrbyfloat(client::RedisClient, name::String, field, increment::Float64)
     # HINCRBYFLOAT key field increment
-    # Increment the float value of a hash field by the given amount 
+    # Increment the float value of a hash field by the given amount
     execute_command(client, "HINCRBYFLOAT", name, field, increment)
 end
 
 function hkeys(client::RedisClient, name::String)
     # HKEYS key
-    # Get all the fields in a hash 
+    # Get all the fields in a hash
     execute_command(client, "HKEYS", name)
 end
 
 function hlen(client::RedisClient, name::String)
-    # HLEN key 
-    # Get the number of fields in a hash 
+    # HLEN key
+    # Get the number of fields in a hash
     execute_command(client, "HLEN", name)
 end
 
-function hmget(client::RedisClient, name::String, fields...)
-    # HMGET key field [field ...] 
-    # Get the values of all the given hash fields 
-    execute_command(client, "HMGET", name, fields...)
+function hmget(client::RedisClient, name::String, fields...; options...)
+    # HMGET key field [field ...]
+    # Get the values of all the given hash fields
+    execute_command(client, "HMGET", name, fields...; options...)
 end
 
 function hmset(client::RedisClient, name::String, values::Dict)
     # HMSET key field value [field value ...]
-    # Set multiple hash fields to multiple values 
+    # Set multiple hash fields to multiple values
     args = _flatten_dict(values)
     execute_command(client, "HMSET", name, args...)
 end
 
 function hset(client::RedisClient, name::String, field, value)
     # HSET key field value
-    # Set the string value of a hash field 
+    # Set the string value of a hash field
     execute_command(client, "HSET", name, field, value)
 end
 
 function hsetnx(client::RedisClient, name::String, field, value)
     # HSETNX key field value
-    # Set the value of a hash field, only if the field does not exist 
+    # Set the value of a hash field, only if the field does not exist
     execute_command(client, "HSETNX", name, field, value)
 end
 
 function hvals(client::RedisClient, name::String)
-    # HVALS key 
-    # Get all the values in a hash 
+    # HVALS key
+    # Get all the values in a hash
     execute_command(client, "HVALS", name)
 end
 
 function hscan(client::RedisClient, name::String, cursor;
                match=nothing, count=nothing, to_dict::Bool=true)
     # HSCAN key cursor [MATCH pattern] [COUNT count]
-    # Incrementally iterate hash fields and associated values 
+    # Incrementally iterate hash fields and associated values
     args = [name, cursor]
     if match != nothing
         push!(args, "MATCH")

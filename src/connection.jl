@@ -7,6 +7,7 @@ import Base.StatusInit,
              Base.StatusActive,
              Base.StatusClosing,        # todo: use me!
              Base.StatusClosed
+using StreamReader
 
 const STR_STAR = "*"
 const STR_DOLLAR = "\$"
@@ -146,11 +147,11 @@ end
 
 ## Read methods ##
 
-function read_response(conn::Connection)
+function read_response(conn::Connection, args...; kwargs...)
     # Read the response from a previously sent command
     response = nothing
     try
-        response = read_response(conn.parser)
+        response = read_response(conn.parser, args...; kwargs...)
         isa(response, ResponseError) && throw(response)
         return response
     catch err
@@ -159,11 +160,12 @@ function read_response(conn::Connection)
     end
 end
 
-function read_response(parser::RedisParser)
+function read_response(parser::RedisParser; stream::Bool = false, psize::Integer = 0, kwargs...)
     bytes::Vector{Uint8} = read(parser)
     byte::Uint8 = bytes[1]
     response::UTF8String = UTF8String(bytes[2:end])
     in(char(byte), "- + : \$ *") || throw(InvalidResponse("Protocol error"))
+
     if byte == '-'
         # Error reply:
         # the first word after the "-" up to the first space or newline
@@ -188,7 +190,12 @@ function read_response(parser::RedisParser)
         # If the requested value does not exist the bulk reply will use the special
         # value -1 as data length. This is called a NULL Bulk Reply
         len == -1 && return nothing
-        return UTF8String(read(parser, len))
+
+        if stream
+            return read(parser, PartsIterator(len, psize); kwargs...)
+        else
+            return UTF8String(read(parser, len))
+        end
     elseif byte == '*'
         # Multi Bulk reply:
         # used to return an array of other replies. Every element of a Multi Bulk
@@ -196,13 +203,33 @@ function read_response(parser::RedisParser)
         len = int(response)
         # Null Multi Bulk Reply exists
         len == -1 && return nothing
-        return {read_response(parser) for i in 1:len}
+
+        if stream
+            return ReaderListIterator(len) do rli
+                read_response(parser; stream=stream, psize=psize, kwargs...)
+            end
+        else
+            return {read_response(parser; kwargs...) for i in 1:len}
+        end
     end
 end
 
 function read(parser::RedisParser)
     # Read and strip a line from the socket
     readuntil(parser.sock, STR_CRLF)[1:(end-2)]
+end
+
+function read(parser::RedisParser, parts_it::PartsIterator; post_done = nothing, kwargs...)
+    # read WITH STREAMER
+    return IOReaderIterator(parser.sock, parts_it;
+        post_done=(ri) -> begin
+            # read end CRLF
+            Base.read(parser.sock, Uint8, 2)
+
+            if post_done != nothing
+                post_done(ri)
+            end
+        end, kwargs...)
 end
 
 function read(parser::RedisParser, len::Integer)
